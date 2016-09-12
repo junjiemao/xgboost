@@ -10,8 +10,12 @@ import os
 
 from .core import DMatrix, Booster
 from .training import train, cv
-from .sklearn import XGBModel, XGBClassifier, XGBRegressor
-from .plotting import plot_importance, plot_tree, to_graphviz
+from . import rabit                   # noqa
+try:
+    from .sklearn import XGBModel, XGBClassifier, XGBRegressor
+    from .plotting import plot_importance, plot_tree, to_graphviz
+except ImportError:
+    pass
 
 VERSION_FILE = os.path.join(os.path.dirname(__file__), 'VERSION')
 __version__ = open(VERSION_FILE).read().strip()

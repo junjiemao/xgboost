@@ -1,6 +1,6 @@
 XGBoost Parameters
 ==================
-Before running XGboost, we must set three types of parameters, general parameters, booster parameters and task parameters:
+Before running XGboost, we must set three types of parameters: general parameters, booster parameters and task parameters.
 - General parameters relates to which booster we are using to do boosting, commonly tree or linear model
 - Booster parameters depends on which booster you have chosen
 - Learning Task parameters that decides on the learning scenario, for example, regression tasks may use different parameters with ranking tasks.
@@ -13,7 +13,7 @@ In R-package, you can use .(dot) to replace under score in the parameters, for e
 General Parameters
 ------------------
 * booster [default=gbtree]
-  - which booster to use, can be gbtree or gblinear. gbtree uses tree based model while gblinear uses linear function.
+  - which booster to use, can be gbtree, gblinear or dart. gbtree and dart use tree based model while gblinear uses linear function.
 * silent [default=0]
   - 0 means printing running messages, 1 means silent mode.
 * nthread [default to maximum number of threads available if not set]
@@ -32,7 +32,7 @@ Parameters for Tree Booster
   - minimum loss reduction required to make a further partition on a leaf node of the tree. the larger, the more conservative the algorithm will be.
   - range: [0,∞]
 * max_depth [default=6]
-  - maximum depth of a tree
+  - maximum depth of a tree, increase this value will make model more complex / likely to be overfitting.
   - range: [1,∞]
 * min_child_weight [default=1]
   - minimum sum of instance weight(hessian) needed in a child. If the tree partition step results in a leaf node with the sum of instance weight less than min_child_weight, then the building process will give up further partitioning. In linear regression mode, this simply corresponds to minimum number of instances needed to be in each node. The larger, the more conservative the algorithm will be.
@@ -46,24 +46,69 @@ Parameters for Tree Booster
 * colsample_bytree [default=1]
   - subsample ratio of columns when constructing each tree.
   - range: (0,1]
+* colsample_bylevel [default=1]
+  - subsample ratio of columns for each split, in each level.
+  - range: (0,1]
 * lambda [default=1]
-  - L2 regularization term on weights
+  - L2 regularization term on weights, increase this value will make model more conservative.
 * alpha [default=0]
-  - L1 regularization term on weights
+  - L1 regularization term on weights, increase this value will make model more conservative.
+* tree_method, string [default='auto']
+  - The tree construction algorithm used in XGBoost(see description in the [reference paper](http://arxiv.org/abs/1603.02754))
+  - Distributed and external memory version only support approximate algorithm.
+  - Choices: {'auto', 'exact', 'approx'}
+    - 'auto': Use heuristic to choose faster one.
+      - For small to medium dataset, exact greedy will be used.
+      - For very large-dataset, approximate algorithm will be chosen.
+      - Because old behavior is always use exact greedy in single machine,
+        user will get a message when approximate algorithm is chosen to notify this choice.
+    - 'exact': Exact greedy algorithm.
+    - 'approx': Approximate greedy algorithm using sketching and histogram.
+* sketch_eps, [default=0.03]
+  - This is only used for approximate greedy algorithm.
+  - This roughly translated into ```O(1 / sketch_eps)``` number of bins.
+    Compared to directly select number of bins, this comes with theoretical guarantee with sketch accuracy.
+  - Usually user does not have to tune this.
+    but consider setting to a lower number for more accurate enumeration.
+  - range: (0, 1)
+* scale_pos_weight, [default=0]
+  - Control the balance of positive and negative weights, useful for unbalanced classes. A typical value to consider: sum(negative  cases) / sum(positive cases) See [Parameters Tuning](how_to/param_tuning.md) for more discussion. Also see Higgs Kaggle competition demo for examples: [R](../demo/kaggle-higgs/higgs-train.R ), [py1](../demo/kaggle-higgs/higgs-numpy.py ), [py2](../demo/kaggle-higgs/higgs-cv.py ), [py3](../demo/guide-python/cross_validation.py)
+
+Additional parameters for Dart Booster
+--------------------------------------
+* sample_type [default="uniform"]
+  - type of sampling algorithm.
+    - "uniform": dropped trees are selected uniformly.
+    - "weighted": dropped trees are selected in proportion to weight.
+* normalize_type [default="tree"]
+  - type of normalization algorithm.
+    - "tree": new trees have the same weight of each of dropped trees.
+      - weight of new trees are 1 / (k + learnig_rate)
+      - dropped trees are scaled by a factor of k / (k + learning_rate)
+    - "forest": new trees have the same weight of sum of dropped trees (forest).
+      - weight of new trees are 1 / (1 + learning_rate)
+      - dropped trees are scaled by a factor of 1 / (1 + learning_rate)
+* rate_drop [default=0.0]
+  - dropout rate.
+  - range: [0.0, 1.0]
+* skip_drop [default=0.0]
+  - probability of skip dropout.
+    - If a dropout is skipped, new trees are added in the same manner as gbtree.
+  - range: [0.0, 1.0]
 
 Parameters for Linear Booster
 -----------------------------
 * lambda [default=0]
-  - L2 regularization term on weights
+  - L2 regularization term on weights, increase this value will make model more conservative.
 * alpha [default=0]
-  - L1 regularization term on weights
+  - L1 regularization term on weights, increase this value will make model more conservative.
 * lambda_bias
   - L2 regularization term on bias, default 0(no L1 reg on bias because it is not important)
 
 Learning Task Parameters
 ------------------------
+Specify the learning task and the corresponding learning objective. The objective options are below:
 * objective [ default=reg:linear ]
- - specify the learning task and the corresponding learning objective, and the objective options are below:
  - "reg:linear" --linear regression
  - "reg:logistic" --logistic regression
  - "binary:logistic" --logistic regression for binary classification, output probability
@@ -73,23 +118,27 @@ Learning Task Parameters
  - "multi:softmax" --set XGBoost to do multiclass classification using the softmax objective, you also need to set num_class(number of classes)
  - "multi:softprob" --same as softmax, but output a vector of ndata * nclass, which can be further reshaped to ndata, nclass matrix. The result contains predicted probability of each data point belonging to each class.
  - "rank:pairwise" --set XGBoost to do ranking task by minimizing the pairwise loss
+ - "reg:gamma" --gamma regression for severity data, output mean of gamma distribution
 * base_score [ default=0.5 ]
   - the initial prediction score of all instances, global bias
+  - for sufficient number of iterations, changing this value will not have too much effect.
 * eval_metric [ default according to objective ]
   - evaluation metrics for validation data, a default metric will be assigned according to objective( rmse for regression, and error for classification, mean average precision for ranking )
   - User can add multiple evaluation metrics, for python user, remember to pass the metrics in as list of parameters pairs instead of map, so that latter 'eval_metric' won't override previous one
   - The choices are listed below:
   - "rmse": [root mean square error](http://en.wikipedia.org/wiki/Root_mean_square_error)
+  - "mae": [mean absolute error](https://en.wikipedia.org/wiki/Mean_absolute_error)
   - "logloss": negative [log-likelihood](http://en.wikipedia.org/wiki/Log-likelihood)
   - "error": Binary classification error rate. It is calculated as #(wrong cases)/#(all cases). For the predictions, the evaluation will regard the instances with prediction value larger than 0.5 as positive instances, and the others as negative instances.
   - "merror": Multiclass classification error rate. It is calculated as #(wrong cases)/#(all cases).
-  - "mlogloss":  Multiclass logloss
+  - "mlogloss": [Multiclass logloss](https://www.kaggle.com/wiki/MultiClassLogLoss)
   - "auc": [Area under the curve](http://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_curve) for ranking evaluation.
   - "ndcg":[Normalized Discounted Cumulative Gain](http://en.wikipedia.org/wiki/NDCG)
   - "map":[Mean average precision](http://en.wikipedia.org/wiki/Mean_average_precision#Mean_average_precision)
   - "ndcg@n","map@n": n can be assigned as an integer to cut off the top positions in the lists for evaluation.
   - "ndcg-","map-","ndcg@n-","map@n-": In XGBoost, NDCG and MAP will evaluate the score of a list without any positive samples as 1. By adding "-" in the evaluation metric XGBoost will evaluate these score as 0 to be consistent under some conditions.
-training repeatively
+training repeatedly
+  - "gamma-deviance": [residual deviance for gamma regression]
 * seed [ default=0 ]
  - random number seed.
 
@@ -97,9 +146,9 @@ Command Line Parameters
 -----------------------
 The following parameters are only used in the console version of xgboost
 * use_buffer [ default=1 ]
- -  whether create binary buffer for text input, this normally will speedup loading when do
+ -  Whether to create a binary buffer from text input. Doing so normally will speed up loading times
 * num_round
- - the number of round for boosting.
+ - The number of rounds for boosting
 * data
   - The path of training data
 * test:data
